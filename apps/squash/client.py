@@ -223,43 +223,67 @@ class SquashClient:
         Returns:
             List of all test cases under the folder (including nested)
         """
-        all_test_cases = []
-        
-        try:
-            content = self.get_campaign_folder_content(folder_id)
-        except SquashClientError:
-            return []
-        
-        # Get campaigns in this folder and their test cases
-        campaigns = content.get("_embedded", {}).get("campaigns", [])
-        for campaign in campaigns:
-            campaign_id = campaign.get("id")
-            if campaign_id:
-                # Get iterations for this campaign
-                iterations = self.get_iterations(campaign_id)
+        test_cases_by_id: Dict[int, Dict[str, Any]] = {}
+        visited_folders = set()
+
+        def collect_from_folder(current_folder_id: int) -> None:
+            if current_folder_id in visited_folders:
+                return
+            visited_folders.add(current_folder_id)
+
+            try:
+                content = self.get_campaign_folder_content(current_folder_id)
+            except SquashClientError:
+                return
+
+            embedded = content.get("_embedded", {})
+
+            # Process campaigns in this folder, then their iterations and test plans.
+            campaigns = embedded.get("campaigns", [])
+            for campaign in campaigns:
+                campaign_id = campaign.get("id")
+                if not campaign_id:
+                    continue
+
+                try:
+                    iterations = self.get_iterations(campaign_id)
+                except SquashClientError:
+                    continue
+
                 for iteration in iterations:
                     iteration_id = iteration.get("id")
-                    if iteration_id:
-                        # Get test plan items for this iteration
+                    if not iteration_id:
+                        continue
+
+                    try:
                         test_plan_items = self.get_iteration_test_plan(iteration_id)
-                        for item in test_plan_items:
-                            # Extract test case info from test plan item
-                            referenced_tc = item.get("referenced_test_case", {})
-                            if referenced_tc:
-                                tc_id = referenced_tc.get("id")
-                                if tc_id:
-                                    tc = self.get_test_case(tc_id)
-                                    all_test_cases.append(tc)
-        
-        # Recursively process subfolders
-        subfolders = content.get("_embedded", {}).get("campaign-folders", [])
-        for subfolder in subfolders:
-            subfolder_id = subfolder.get("id")
-            if subfolder_id:
-                nested_test_cases = self.get_all_test_cases_under_campaign_folder(subfolder_id)
-                all_test_cases.extend(nested_test_cases)
-        
-        return all_test_cases
+                    except SquashClientError:
+                        continue
+
+                    for item in test_plan_items:
+                        referenced_tc = item.get("referenced_test_case", {})
+                        tc_id = referenced_tc.get("id")
+                        if not tc_id:
+                            continue
+
+                        if tc_id in test_cases_by_id:
+                            continue
+
+                        # Keep full test case payload when accessible, otherwise keep reference.
+                        try:
+                            test_cases_by_id[tc_id] = self.get_test_case(tc_id)
+                        except SquashClientError:
+                            test_cases_by_id[tc_id] = referenced_tc
+
+            # Recursively process nested campaign folders.
+            subfolders = embedded.get("campaign-folders", [])
+            for subfolder in subfolders:
+                subfolder_id = subfolder.get("id")
+                if subfolder_id:
+                    collect_from_folder(subfolder_id)
+
+        collect_from_folder(folder_id)
+        return list(test_cases_by_id.values())
 
     # Iterations
     def get_iterations(self, campaign_id: int) -> List[Dict[str, Any]]:
