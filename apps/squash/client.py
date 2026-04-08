@@ -181,23 +181,85 @@ class SquashClient:
         
         return all_folders
 
-    def find_campaign_in_folders(self, campaign_name: str) -> Optional[Dict[str, Any]]:
+    def find_campaign_folder_by_name(self, folder_name: str) -> Optional[Dict[str, Any]]:
         """
-        Search for a campaign by name in all campaign folders.
+        Search for a campaign folder by name.
         
         Args:
-            campaign_name: Name of the campaign to find
+            folder_name: Name of the campaign folder to find
             
         Returns:
-            Campaign folder containing the campaign, or None if not found
+            Campaign folder or None if not found
         """
         all_folders = self.get_all_campaign_folders()
         
         for folder in all_folders:
-            if folder.get("name") == campaign_name:
+            if folder.get("name") == folder_name:
                 return folder
         
         return None
+
+    def get_campaign_folder_content(self, folder_id: int) -> Dict[str, Any]:
+        """
+        Get the content of a campaign folder (subfolders and campaigns).
+        
+        Args:
+            folder_id: ID of the campaign folder
+            
+        Returns:
+            Folder content with subfolders and campaigns
+        """
+        return self._get(f"campaign-folders/{folder_id}/content")
+
+    def get_all_test_cases_under_campaign_folder(self, folder_id: int) -> List[Dict[str, Any]]:
+        """
+        Recursively get all test cases under a campaign folder.
+        
+        Traverses all subfolders and campaigns to collect every test case.
+        
+        Args:
+            folder_id: ID of the campaign folder
+            
+        Returns:
+            List of all test cases under the folder (including nested)
+        """
+        all_test_cases = []
+        
+        try:
+            content = self.get_campaign_folder_content(folder_id)
+        except SquashClientError:
+            return []
+        
+        # Get campaigns in this folder and their test cases
+        campaigns = content.get("_embedded", {}).get("campaigns", [])
+        for campaign in campaigns:
+            campaign_id = campaign.get("id")
+            if campaign_id:
+                # Get iterations for this campaign
+                iterations = self.get_iterations(campaign_id)
+                for iteration in iterations:
+                    iteration_id = iteration.get("id")
+                    if iteration_id:
+                        # Get test plan items for this iteration
+                        test_plan_items = self.get_iteration_test_plan(iteration_id)
+                        for item in test_plan_items:
+                            # Extract test case info from test plan item
+                            referenced_tc = item.get("referenced_test_case", {})
+                            if referenced_tc:
+                                tc_id = referenced_tc.get("id")
+                                if tc_id:
+                                    tc = self.get_test_case(tc_id)
+                                    all_test_cases.append(tc)
+        
+        # Recursively process subfolders
+        subfolders = content.get("_embedded", {}).get("campaign-folders", [])
+        for subfolder in subfolders:
+            subfolder_id = subfolder.get("id")
+            if subfolder_id:
+                nested_test_cases = self.get_all_test_cases_under_campaign_folder(subfolder_id)
+                all_test_cases.extend(nested_test_cases)
+        
+        return all_test_cases
 
     # Iterations
     def get_iterations(self, campaign_id: int) -> List[Dict[str, Any]]:

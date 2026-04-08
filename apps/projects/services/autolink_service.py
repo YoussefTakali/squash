@@ -165,6 +165,137 @@ class AutoLinkService:
         
         return None
 
+    def fetch_test_cases_from_campaign_folder(self, folder_id: int) -> List[Dict[str, Any]]:
+        """
+        Fetch all test cases under a campaign folder (including nested subfolders).
+        
+        Args:
+            folder_id: ID of the campaign folder
+            
+        Returns:
+            List of test cases with id, name, reference, and path
+        """
+        try:
+            test_cases = self.client.get_all_test_cases_under_campaign_folder(folder_id)
+            return [
+                {
+                    "id": tc.get("id"),
+                    "name": tc.get("name", ""),
+                    "reference": tc.get("reference", ""),
+                    "path": tc.get("path", "")
+                }
+                for tc in test_cases
+            ]
+        except SquashClientError:
+            return []
+
+    def auto_link_by_project_name(
+        self,
+        project_name: str,
+        robot_test_cases: List[Dict[str, Any]],
+        threshold: float = None,
+        skip_already_mapped: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Auto-link Robot tests by matching project name to a campaign folder.
+        
+        Flow:
+        1. Fetch all campaign folders (paginated)
+        2. Find folder matching project_name
+        3. Get all test cases under that folder (including nested)
+        4. Match Robot test cases with Squash test cases by name
+        
+        Args:
+            project_name: Name of the project (used to find matching campaign folder)
+            robot_test_cases: List of Robot test cases (with 'name' field)
+            threshold: Minimum similarity score
+            skip_already_mapped: Skip tests that already have a mapping
+            
+        Returns:
+            Dictionary with matches and statistics
+        """
+        # Step 1 & 2: Find the campaign folder matching project name
+        campaign_folder = self.find_campaign_folder_by_name(project_name)
+        
+        if not campaign_folder:
+            return {
+                "success": False,
+                "error": f"No campaign folder found matching project name '{project_name}'",
+                "matches": [],
+                "stats": {}
+            }
+        
+        folder_id = campaign_folder.get("id")
+        
+        # Step 3: Get all test cases under this folder
+        squash_test_cases = self.fetch_test_cases_from_campaign_folder(folder_id)
+        
+        if not squash_test_cases:
+            return {
+                "success": False,
+                "error": f"No test cases found under campaign folder '{project_name}'",
+                "matches": [],
+                "stats": {
+                    "campaign_folder_id": folder_id,
+                    "campaign_folder_name": campaign_folder.get("name")
+                }
+            }
+        
+        # Step 4: Match Robot tests with Squash test cases
+        matches = []
+        matched_count = 0
+        skipped_count = 0
+        no_match_count = 0
+
+        for robot_tc in robot_test_cases:
+            robot_name = robot_tc.get("name", "")
+            existing_mapping = robot_tc.get("squash_test_case_id")
+
+            # Skip if already mapped and flag is set
+            if skip_already_mapped and existing_mapping:
+                skipped_count += 1
+                matches.append({
+                    "robot_test_name": robot_name,
+                    "status": "skipped",
+                    "existing_mapping": existing_mapping,
+                    "match": None
+                })
+                continue
+
+            # Find best match
+            match = self.find_best_match(robot_name, squash_test_cases, threshold)
+
+            if match:
+                matched_count += 1
+                matches.append({
+                    "robot_test_name": robot_name,
+                    "status": "matched",
+                    "existing_mapping": existing_mapping,
+                    "match": match
+                })
+            else:
+                no_match_count += 1
+                matches.append({
+                    "robot_test_name": robot_name,
+                    "status": "no_match",
+                    "existing_mapping": existing_mapping,
+                    "match": None
+                })
+
+        return {
+            "success": True,
+            "matches": matches,
+            "stats": {
+                "total": len(robot_test_cases),
+                "matched": matched_count,
+                "skipped": skipped_count,
+                "no_match": no_match_count,
+                "squash_test_cases_available": len(squash_test_cases),
+                "campaign_folder_id": folder_id,
+                "campaign_folder_name": campaign_folder.get("name")
+            }
+        }
+
     def fetch_squash_projects(self) -> List[Dict[str, Any]]:
         """Fetch all projects from Squash TM."""
         try:
