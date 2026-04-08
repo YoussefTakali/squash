@@ -1,5 +1,6 @@
 """Squash TM API Client."""
 import math
+import os
 import requests
 from typing import Optional, List, Dict, Any
 
@@ -32,12 +33,28 @@ class SquashClient:
         if not self.base_url.endswith("/api/rest/latest"):
             self.base_url = f"{self.base_url}/api/rest/latest"
         
+        # SSL verification from environment
+        verify_ssl = os.environ.get("SQUASH_VERIFY_SSL", "true").lower()
+        self.verify_ssl = verify_ssl not in ("false", "0", "no")
+        
+        # Proxy settings from environment
+        self.proxies = {}
+        http_proxy = os.environ.get("HTTP_PROXY")
+        https_proxy = os.environ.get("HTTPS_PROXY")
+        if http_proxy:
+            self.proxies["http"] = http_proxy
+        if https_proxy:
+            self.proxies["https"] = https_proxy
+        
         self.session = requests.Session()
         self.session.headers.update({
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
             "Accept": "application/json"
         })
+        self.session.verify = self.verify_ssl
+        if self.proxies:
+            self.session.proxies.update(self.proxies)
 
     def _request(self, method: str, endpoint: str, **kwargs) -> Dict[str, Any]:
         """Make an API request."""
