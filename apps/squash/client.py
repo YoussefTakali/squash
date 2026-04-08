@@ -211,6 +211,61 @@ class SquashClient:
         """
         return self._get(f"campaign-folders/{folder_id}/content")
 
+    def _get_embedded_list(self, response: Dict[str, Any], keys: List[str]) -> List[Dict[str, Any]]:
+        """Read a list from `_embedded`, handling key naming variations."""
+        embedded = response.get("_embedded", {})
+
+        for key in keys:
+            value = embedded.get(key)
+            if isinstance(value, list):
+                return value
+
+        normalized_keys = {k.replace("-", "").replace("_", "").lower() for k in keys}
+        for embedded_key, value in embedded.items():
+            if not isinstance(value, list):
+                continue
+            normalized_embedded_key = embedded_key.replace("-", "").replace("_", "").lower()
+            if normalized_embedded_key in normalized_keys:
+                return value
+
+        return []
+
+    def _extract_test_case_reference(self, test_plan_item: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract referenced test case payload from a test-plan item."""
+        for key in (
+            "referenced_test_case",
+            "referenced-test-case",
+            "referencedTestCase",
+            "test_case",
+            "test-case",
+            "testCase",
+        ):
+            value = test_plan_item.get(key)
+            if isinstance(value, dict) and value:
+                return value
+        return {}
+
+    def _extract_test_case_id(self, test_plan_item: Dict[str, Any], referenced_tc: Dict[str, Any]) -> Optional[int]:
+        """Extract referenced test-case ID from a test-plan item."""
+        tc_id = referenced_tc.get("id")
+        if tc_id:
+            return tc_id
+
+        for key in ("test_case_id", "test-case-id", "testCaseId", "referenced_test_case_id"):
+            value = test_plan_item.get(key)
+            if value:
+                return value
+
+        referenced_link = test_plan_item.get("_links", {}).get("referenced_test_case", {})
+        href = referenced_link.get("href", "")
+        if "/test-cases/" in href:
+            try:
+                return int(href.rstrip("/").split("/")[-1])
+            except (TypeError, ValueError):
+                return None
+
+        return None
+
     def get_all_test_cases_under_campaign_folder(self, folder_id: int) -> List[Dict[str, Any]]:
         """
         Recursively get all test cases under a campaign folder.
@@ -236,10 +291,20 @@ class SquashClient:
             except SquashClientError:
                 return
 
-            embedded = content.get("_embedded", {})
+            # Recursively process nested campaign folders first.
+            subfolders = self._get_embedded_list(
+                content, ["campaign-folders", "campaign_folders", "campaignFolders", "folders"]
+            )
 
-            # Process campaigns in this folder, then their iterations and test plans.
-            campaigns = embedded.get("campaigns", [])
+            if subfolders:
+                for subfolder in subfolders:
+                    subfolder_id = subfolder.get("id")
+                    if subfolder_id:
+                        collect_from_folder(subfolder_id)
+                return
+
+            # Leaf folder: process campaigns, then iterations, then test cases.
+            campaigns = self._get_embedded_list(content, ["campaigns"])
             for campaign in campaigns:
                 campaign_id = campaign.get("id")
                 if not campaign_id:
@@ -261,8 +326,8 @@ class SquashClient:
                         continue
 
                     for item in test_plan_items:
-                        referenced_tc = item.get("referenced_test_case", {})
-                        tc_id = referenced_tc.get("id")
+                        referenced_tc = self._extract_test_case_reference(item)
+                        tc_id = self._extract_test_case_id(item, referenced_tc)
                         if not tc_id:
                             continue
 
@@ -275,13 +340,6 @@ class SquashClient:
                         except SquashClientError:
                             test_cases_by_id[tc_id] = referenced_tc
 
-            # Recursively process nested campaign folders.
-            subfolders = embedded.get("campaign-folders", [])
-            for subfolder in subfolders:
-                subfolder_id = subfolder.get("id")
-                if subfolder_id:
-                    collect_from_folder(subfolder_id)
-
         collect_from_folder(folder_id)
         return list(test_cases_by_id.values())
 
@@ -289,7 +347,7 @@ class SquashClient:
     def get_iterations(self, campaign_id: int) -> List[Dict[str, Any]]:
         """Get all iterations in a campaign."""
         response = self._get(f"campaigns/{campaign_id}/iterations")
-        return response.get("_embedded", {}).get("iterations", [])
+        return self._get_embedded_list(response, ["iterations"])
 
     def get_iteration(self, iteration_id: int) -> Dict[str, Any]:
         """Get a specific iteration."""
@@ -298,7 +356,10 @@ class SquashClient:
     def get_iteration_test_plan(self, iteration_id: int) -> List[Dict[str, Any]]:
         """Get test plan items for an iteration."""
         response = self._get(f"iterations/{iteration_id}/test-plan")
-        return response.get("_embedded", {}).get("test-plan", [])
+        return self._get_embedded_list(
+            response,
+            ["test-plan", "test_plan", "testPlan", "test-plan-items", "testPlanItems"],
+        )
 
     # Test Cases
     def get_test_cases(self, project_id: int = None) -> List[Dict[str, Any]]:
