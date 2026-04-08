@@ -1,0 +1,64 @@
+{% extends 'base.html' %}
+
+{% block title %}Edit {{ suite.name }} - Squash Manager{% endblock %}
+
+{% block content %}
+<div class="page-container">
+    <div class="page-header">
+        <h1>Edit Test Suite</h1>
+        <a href="{% url 'tests_manager:suite_detail' suite_id=suite.id %}" class="btn btn-secondary">Cancel</a>
+    </div>
+
+    <div class="card">
+        <div class="card-body">
+            <form method="post" class="form">
+                {% csrf_token %}
+
+                {% if form.non_field_errors %}
+                <div class="form-errors">
+                    {% for error in form.non_field_errors %}
+                    <p class="error">{{ error }}</p>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                <div class="form-group">
+                    <label for="id_name">Suite Name</label>
+                    {{ form.name }}
+                    {% if form.name.errors %}
+                    <span class="field-error">{{ form.name.errors.0 }}</span>
+                    {% endif %}
+                </div>
+
+                <div class="form-group">
+                    <label for="id_robot_directory">Robot Framework Directory</label>
+                    {{ form.robot_directory }}
+                    <small class="form-help">Full path to directory containing .robot test files</small>
+                    {% if form.robot_directory.errors %}
+                    <span class="field-error">{{ form.robot_directory.errors.0 }}</span>
+                    {% endif %}
+                </div>
+
+                <hr style="margin: 1.5rem 0;">
+                <h3 style="margin-bottom: 1rem;">Squash TM Configuration</h3>
+
+                <div class="form-group">
+                    <label for="id_squash_iteration_id">Squash Iteration ID</label>
+                    {{ form.squash_iteration_id }}
+                    <small class="form-help">ID of the iteration in Squash where results will be synced</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="id_squash_campaign_id">Squash Campaign ID</label>
+                    {{ form.squash_campaign_id }}
+                    <small class="form-help">ID of the campaign (optional, for reference)</small>
+                </div>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

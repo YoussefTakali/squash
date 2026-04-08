@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block title %}My Projects - Squash Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>My Projects</h1>
+    <a href="{% url 'projects:project_connect' %}" class="btn btn-primary">Connect New Project</a>
+</div>
+
+{% if projects %}
+<div class="project-grid">
+    {% for project in projects %}
+    <div class="card project-card">
+        <div class="card-header">
+            <h3>{{ project.name }}</h3>
+        </div>
+        <div class="card-body">
+            <p class="text-muted">{{ project.directory_path }}</p>
+            <div class="project-stats">
+                <span class="stat">
+                    <strong>{{ project.test_suites|length }}</strong> test suites
+                </span>
+                <span class="stat">
+                    <strong>{% for s in project.test_suites %}{{ s.test_cases|length }}{% if not forloop.last %} + {% endif %}{% endfor %}</strong> test cases
+                </span>
+            </div>
+            {% if project.squash_iteration_id %}
+            <p class="text-success">Squash configured</p>
+            {% else %}
+            <p class="text-warning">Squash not configured</p>
+            {% endif %}
+        </div>
+        <div class="card-footer">
+            <a href="{% url 'projects:project_detail' project.id %}" class="btn btn-sm btn-outline">View Details</a>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+    <h2>No projects yet</h2>
+    <p>Connect your first Robot Framework project to get started.</p>
+    <a href="{% url 'projects:project_connect' %}" class="btn btn-primary">Connect Project</a>
+</div>
+{% endif %}
+{% endblock %}

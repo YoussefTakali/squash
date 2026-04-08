@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+
+{% block title %}Select Tests - {{ project.name }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Select Test Scopes</h1>
+    <p class="subtitle">{{ project.name }}</p>
+</div>
+
+<form method="post" action="{% url 'projects:project_detail' project.id %}" id="execute-form">
+    {% csrf_token %}
+    
+    <div class="card">
+        <div class="card-header">
+            <h3>Select Test Suites to Execute</h3>
+            <div class="header-actions">
+                <button type="button" class="btn btn-sm btn-outline" onclick="selectAll()">Select All</button>
+                <button type="button" class="btn btn-sm btn-outline" onclick="deselectAll()">Deselect All</button>
+            </div>
+        </div>
+        <div class="card-body">
+            {% for suite in project.test_suites %}
+            <div class="suite-item">
+                <label class="checkbox-label">
+                    <input type="checkbox" name="suites" value="{{ suite.file_path }}" 
+                           checked class="suite-checkbox">
+                    <span class="checkbox-text">
+                        <strong>{{ suite.file_path }}</strong>
+                        <small class="text-muted">({{ suite.test_cases|length }} tests)</small>
+                    </span>
+                </label>
+                <ul class="test-preview">
+                    {% for tc in suite.test_cases %}
+                    <li>
+                        {{ tc.name }}
+                        {% if tc.squash_test_case_id %}
+                        <span class="badge badge-success">Mapped</span>
+                        {% else %}
+                        <span class="badge badge-warning">Not mapped</span>
+                        {% endif %}
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    
+    <div class="form-actions">
+        <button type="button" class="btn btn-primary" onclick="executeTests()">
+            Execute Selected Tests
+        </button>
+        <a href="{% url 'projects:project_detail' project.id %}" class="btn btn-outline">Cancel</a>
+    </div>
+</form>
+
+<div id="execution-status" class="card" style="display: none;">
+    <div class="card-header">
+        <h3>Execution Status</h3>
+    </div>
+    <div class="card-body">
+        <div class="execution-log" id="execution-log"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function selectAll() {
+    document.querySelectorAll('.suite-checkbox').forEach(cb => cb.checked = true);
+}
+
+function deselectAll() {
+    document.querySelectorAll('.suite-checkbox').forEach(cb => cb.checked = false);
+}
+
+function executeTests() {
+    const selected = Array.from(document.querySelectorAll('.suite-checkbox:checked'))
+        .map(cb => cb.value);
+
+    if (selected.length === 0) {
+        alert('Please select at least one test suite to execute.');
+        return;
+    }
+
+    document.getElementById('execution-status').style.display = 'block';
+    const log = document.getElementById('execution-log');
+    log.innerHTML = '<p>Starting test execution...</p>';
+    log.innerHTML += '<p>Executing: ' + selected.join(', ') + '</p>';
+
+    // Call execute endpoint
+    fetch('{% url "projects:project_execute" project.id %}', {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': '{{ csrf_token }}',
+            'X-Requested-With': 'XMLHttpRequest',
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({test_files: selected})
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            log.innerHTML += '<p class="text-danger">Error: ' + data.error + '</p>';
+        } else {
+            log.innerHTML += '<p class="text-success">Execution completed!</p>';
+            log.innerHTML += '<p>Duration: ' + data.duration.toFixed(2) + ' seconds</p>';
+            log.innerHTML += '<p>Return code: ' + data.return_code + '</p>';
+            log.innerHTML += '<p>Mappings synced: ' + data.mappings_synced + '</p>';
+
+            if (data.stdout) {
+                log.innerHTML += '<h4>Output:</h4><pre class="output-log">' + data.stdout + '</pre>';
+            }
+            if (data.stderr) {
+                log.innerHTML += '<h4>Errors:</h4><pre class="output-log error">' + data.stderr + '</pre>';
+            }
+        }
+    })
+    .catch(err => {
+        log.innerHTML += '<p class="text-danger">Request failed: ' + err + '</p>';
+    });
+}
+</script>
+{% endblock %}

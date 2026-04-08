@@ -1,0 +1,5 @@
+Django>=4.2,<5.0
+requests>=2.31.0
+python-dotenv>=1.0.0
+robotframework>=6.1
+filelock>=3.12.0

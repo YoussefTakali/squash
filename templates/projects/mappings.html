@@ -1,0 +1,422 @@
+{% extends "base.html" %}
+
+{% block title %}Test Mappings - {{ project.name }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Test Mappings</h1>
+    <p class="subtitle">{{ project.name }}</p>
+</div>
+
+<form method="post" class="form">
+    {% csrf_token %}
+
+    <div class="card">
+        <div class="card-header">
+            <h3>Squash Configuration</h3>
+        </div>
+        <div class="card-body">
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="squash_campaign_id">Campaign ID</label>
+                    <input type="number" id="squash_campaign_id" name="squash_campaign_id"
+                           class="form-control" value="{{ project.squash_campaign_id|default:'' }}"
+                           placeholder="Enter Squash Campaign ID">
+                </div>
+                <div class="form-group">
+                    <label for="squash_iteration_id">Iteration ID</label>
+                    <input type="number" id="squash_iteration_id" name="squash_iteration_id"
+                           class="form-control" value="{{ project.squash_iteration_id|default:'' }}"
+                           placeholder="Enter Squash Iteration ID" required>
+                    <small class="form-text">Required for test execution sync</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <h3>Test Case Mappings</h3>
+                <small>Map each Robot Framework test to a Squash TM Test Case ID</small>
+            </div>
+            <button type="button" id="autolink-btn" class="btn btn-outline">
+                Auto-Link from Squash
+            </button>
+        </div>
+        <div class="card-body">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Robot Test Name</th>
+                        <th>File</th>
+                        <th>Squash Test Case ID</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for tc in test_cases %}
+                    <tr data-test-name="{{ tc.name }}">
+                        <td>{{ tc.name }}</td>
+                        <td><small class="text-muted">{{ tc.file_path }}</small></td>
+                        <td>
+                            <input type="number" name="mapping_{{ tc.name }}"
+                                   class="form-control form-control-sm mapping-input"
+                                   value="{{ tc.squash_test_case_id|default:'' }}"
+                                   placeholder="Test Case ID">
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="3" class="text-center">No test cases found</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Save Mappings</button>
+        <a href="{% url 'projects:project_detail' project.id %}" class="btn btn-outline">Cancel</a>
+    </div>
+</form>
+
+<!-- Auto-Link Modal -->
+<div id="autolink-modal" class="modal" style="display: none;">
+    <div class="modal-content" style="max-width: 800px; max-height: 80vh; overflow: hidden; display: flex; flex-direction: column;">
+        <div class="modal-header">
+            <h3>Auto-Link Test Cases</h3>
+            <button type="button" class="modal-close" onclick="closeAutolinkModal()">&times;</button>
+        </div>
+        <div class="modal-body" style="flex: 1; overflow-y: auto;">
+            <div id="autolink-loading" style="text-align: center; padding: 40px;">
+                <p>Fetching matches from Squash TM...</p>
+                <p><small>This may take a moment</small></p>
+            </div>
+
+            <div id="autolink-error" style="display: none;" class="alert alert-danger"></div>
+
+            <div id="autolink-results" style="display: none;">
+                <div id="autolink-stats" style="margin-bottom: 16px; padding: 12px; background: #f5f5f5; border-radius: 4px;">
+                </div>
+
+                <div style="margin-bottom: 16px;">
+                    <label>
+                        <input type="checkbox" id="select-all-matches" checked>
+                        Select all matches
+                    </label>
+                    <span style="margin-left: 16px;">
+                        <label>
+                            Min. confidence:
+                            <select id="confidence-filter" style="margin-left: 4px;">
+                                <option value="low">Low (60%+)</option>
+                                <option value="medium" selected>Medium (75%+)</option>
+                                <option value="high">High (90%+)</option>
+                            </select>
+                        </label>
+                    </span>
+                </div>
+
+                <table class="table" style="font-size: 14px;">
+                    <thead>
+                        <tr>
+                            <th style="width: 40px;"></th>
+                            <th>Robot Test</th>
+                            <th>Squash Match</th>
+                            <th style="width: 100px;">Confidence</th>
+                        </tr>
+                    </thead>
+                    <tbody id="autolink-matches">
+                    </tbody>
+                </table>
+
+                <div id="no-matches-msg" style="display: none; text-align: center; padding: 20px; color: #666;">
+                    No matches found above the selected confidence threshold.
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer" style="padding: 16px; border-top: 1px solid #e0e0e0; display: flex; justify-content: space-between;">
+            <span id="selected-count">0 matches selected</span>
+            <div>
+                <button type="button" class="btn btn-outline" onclick="closeAutolinkModal()">Cancel</button>
+                <button type="button" id="apply-autolink-btn" class="btn btn-primary" onclick="applyAutolink()">
+                    Apply Selected
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+.modal-content {
+    background: white;
+    border-radius: 8px;
+    width: 90%;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+}
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px;
+    border-bottom: 1px solid #e0e0e0;
+}
+.modal-header h3 {
+    margin: 0;
+}
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: #666;
+}
+.modal-body {
+    padding: 16px;
+}
+.confidence-high { color: #2e7d32; font-weight: 600; }
+.confidence-medium { color: #f57c00; font-weight: 600; }
+.confidence-low { color: #d32f2f; font-weight: 600; }
+.match-row.filtered { display: none; }
+.match-row td { vertical-align: middle; }
+</style>
+
+<script>
+const projectId = "{{ project.id }}";
+let allMatches = [];
+
+document.getElementById('autolink-btn').addEventListener('click', openAutolinkModal);
+
+async function openAutolinkModal() {
+    const modal = document.getElementById('autolink-modal');
+    const loading = document.getElementById('autolink-loading');
+    const error = document.getElementById('autolink-error');
+    const results = document.getElementById('autolink-results');
+
+    modal.style.display = 'flex';
+    loading.style.display = 'block';
+    error.style.display = 'none';
+    results.style.display = 'none';
+
+    try {
+        const response = await fetch(`/projects/${projectId}/autolink/preview/`, {
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}'
+            }
+        });
+        const data = await response.json();
+
+        loading.style.display = 'none';
+
+        if (!data.success) {
+            error.textContent = data.error || 'Failed to fetch matches';
+            error.style.display = 'block';
+            return;
+        }
+
+        allMatches = data.matches;
+        renderStats(data.stats);
+        renderMatches(data.matches);
+        results.style.display = 'block';
+        updateSelectedCount();
+
+    } catch (err) {
+        loading.style.display = 'none';
+        error.textContent = 'Error connecting to server: ' + err.message;
+        error.style.display = 'block';
+    }
+}
+
+function closeAutolinkModal() {
+    document.getElementById('autolink-modal').style.display = 'none';
+}
+
+function renderStats(stats) {
+    const statsDiv = document.getElementById('autolink-stats');
+    statsDiv.innerHTML = `
+        <strong>Results:</strong>
+        ${stats.matched} matches found out of ${stats.total} tests
+        (${stats.squash_test_cases_available} Squash test cases available)
+    `;
+}
+
+function renderMatches(matches) {
+    const tbody = document.getElementById('autolink-matches');
+    tbody.innerHTML = '';
+
+    const matchedItems = matches.filter(m => m.status === 'matched' && m.match);
+
+    if (matchedItems.length === 0) {
+        document.getElementById('no-matches-msg').style.display = 'block';
+        return;
+    }
+
+    document.getElementById('no-matches-msg').style.display = 'none';
+
+    matchedItems.forEach((item, idx) => {
+        const match = item.match;
+        const confidenceClass = `confidence-${match.confidence}`;
+        const scorePercent = Math.round(match.score * 100);
+
+        const row = document.createElement('tr');
+        row.className = `match-row`;
+        row.dataset.confidence = match.confidence;
+        row.dataset.robotName = item.robot_test_name;
+        row.dataset.squashId = match.squash_test_case_id;
+
+        row.innerHTML = `
+            <td>
+                <input type="checkbox" class="match-checkbox" checked
+                       data-robot-name="${item.robot_test_name}"
+                       data-squash-id="${match.squash_test_case_id}">
+            </td>
+            <td>${escapeHtml(item.robot_test_name)}</td>
+            <td>
+                <strong>#${match.squash_test_case_id}</strong>: ${escapeHtml(match.squash_test_case_name)}
+            </td>
+            <td class="${confidenceClass}">${scorePercent}%</td>
+        `;
+        tbody.appendChild(row);
+    });
+
+    // Apply initial filter
+    filterByConfidence();
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+document.getElementById('select-all-matches').addEventListener('change', function() {
+    const checkboxes = document.querySelectorAll('.match-checkbox');
+    checkboxes.forEach(cb => {
+        if (!cb.closest('.match-row').classList.contains('filtered')) {
+            cb.checked = this.checked;
+        }
+    });
+    updateSelectedCount();
+});
+
+document.getElementById('autolink-matches').addEventListener('change', function(e) {
+    if (e.target.classList.contains('match-checkbox')) {
+        updateSelectedCount();
+    }
+});
+
+document.getElementById('confidence-filter').addEventListener('change', filterByConfidence);
+
+function filterByConfidence() {
+    const filter = document.getElementById('confidence-filter').value;
+    const rows = document.querySelectorAll('.match-row');
+    let visibleCount = 0;
+
+    rows.forEach(row => {
+        const confidence = row.dataset.confidence;
+        let show = false;
+
+        if (filter === 'low') show = true;
+        else if (filter === 'medium') show = (confidence === 'medium' || confidence === 'high');
+        else if (filter === 'high') show = (confidence === 'high');
+
+        if (show) {
+            row.classList.remove('filtered');
+            visibleCount++;
+        } else {
+            row.classList.add('filtered');
+            row.querySelector('.match-checkbox').checked = false;
+        }
+    });
+
+    document.getElementById('no-matches-msg').style.display = visibleCount === 0 ? 'block' : 'none';
+    updateSelectedCount();
+}
+
+function updateSelectedCount() {
+    const checked = document.querySelectorAll('.match-checkbox:checked').length;
+    document.getElementById('selected-count').textContent = `${checked} matches selected`;
+    document.getElementById('apply-autolink-btn').disabled = checked === 0;
+}
+
+async function applyAutolink() {
+    const checkboxes = document.querySelectorAll('.match-checkbox:checked');
+    const matches = [];
+
+    checkboxes.forEach(cb => {
+        matches.push({
+            robot_test_name: cb.dataset.robotName,
+            squash_test_case_id: parseInt(cb.dataset.squashId)
+        });
+    });
+
+    if (matches.length === 0) {
+        alert('No matches selected');
+        return;
+    }
+
+    try {
+        const response = await fetch(`/projects/${projectId}/autolink/apply/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token }}'
+            },
+            body: JSON.stringify({ matches })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            // Update the form inputs with the new mappings
+            matches.forEach(m => {
+                const row = document.querySelector(`tr[data-test-name="${m.robot_test_name}"]`);
+                if (row) {
+                    const input = row.querySelector('.mapping-input');
+                    if (input) {
+                        input.value = m.squash_test_case_id;
+                        // Highlight updated row briefly
+                        row.style.backgroundColor = '#e8f5e9';
+                        setTimeout(() => row.style.backgroundColor = '', 1500);
+                    }
+                }
+            });
+
+            closeAutolinkModal();
+            alert(`Successfully linked ${data.applied_count} test cases!`);
+        } else {
+            alert('Error: ' + (data.error || 'Unknown error'));
+        }
+
+    } catch (err) {
+        alert('Error applying matches: ' + err.message);
+    }
+}
+
+// Close modal on escape key
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        closeAutolinkModal();
+    }
+});
+
+// Close modal on backdrop click
+document.getElementById('autolink-modal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeAutolinkModal();
+    }
+});
+</script>
+{% endblock %}

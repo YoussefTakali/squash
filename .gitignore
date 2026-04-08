@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+.venv/
+
+# Django
+*.log
+local_settings.py
+db.sqlite3
+media/
+
+# Environment
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Robot Framework
+output.xml
+log.html
+report.html
+*.pyc
+
+# Data (keep structure, ignore contents in production)
+# data/*.json  # Uncomment if you don't want to track JSON data

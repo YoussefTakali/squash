@@ -1,0 +1,137 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ suite.name }} - Squash Manager{% endblock %}
+
+{% block content %}
+<div class="page-container">
+    <div class="page-header">
+        <h1>{{ suite.name }}</h1>
+        <div>
+            <a href="{% url 'tests_manager:suite_edit' suite_id=suite.id %}" class="btn btn-secondary">Edit</a>
+            <button onclick="executeSuite('{{ suite.id }}')" class="btn btn-primary">Execute Tests</button>
+        </div>
+    </div>
+
+    <!-- Suite Info -->
+    <div class="card">
+        <div class="card-header">
+            <h2>Suite Information</h2>
+        </div>
+        <div class="card-body">
+            <p><strong>Directory:</strong> <code>{{ suite.robot_directory }}</code></p>
+            <p><strong>Detected Tests:</strong> {{ suite.detected_tests|length }}</p>
+            {% if suite.squash_iteration_id %}
+            <p><strong>Squash Iteration ID:</strong> {{ suite.squash_iteration_id }}</p>
+            {% endif %}
+            {% if suite.squash_campaign_id %}
+            <p><strong>Squash Campaign ID:</strong> {{ suite.squash_campaign_id }}</p>
+            {% endif %}
+            <div style="margin-top: 1rem;">
+                <button onclick="scanDirectory('{{ suite.id }}')" class="btn btn-secondary btn-sm">
+                    Scan for Tests
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Test Mappings -->
+    <div class="card">
+        <div class="card-header">
+            <h2>Test Mappings (Robot Framework → Squash)</h2>
+        </div>
+        <div class="card-body">
+            {% if mapping_data %}
+            <p class="form-help" style="margin-bottom: 1rem;">
+                Map each Robot Framework test to its corresponding Squash test case ID.
+            </p>
+            <div class="mapping-list">
+                {% for mapping in mapping_data %}
+                <div class="mapping-item">
+                    <span class="robot-test">{{ mapping.robot_test_name }}</span>
+                    <span>→</span>
+                    <input type="number"
+                           class="form-input squash-input mapping-input"
+                           data-test-name="{{ mapping.robot_test_name }}"
+                           value="{{ mapping.squash_test_case_id }}"
+                           placeholder="Squash ID"
+                           style="width: 120px;">
+                </div>
+                {% endfor %}
+            </div>
+            <div style="margin-top: 1rem;">
+                <button onclick="saveMappings('{{ suite.id }}')" class="btn btn-primary">Save Mappings</button>
+            </div>
+            {% else %}
+            <div class="empty-state">
+                <p>No tests detected yet. Click "Scan for Tests" to discover available tests.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Recent Executions -->
+    <div class="card">
+        <div class="card-header">
+            <h2>Recent Executions</h2>
+        </div>
+        <div class="card-body">
+            {% if executions %}
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Status</th>
+                        <th>Results</th>
+                        <th>Synced</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for exec in executions %}
+                    <tr>
+                        <td>{{ exec.executed_at|slice:":19"|default:"-" }}</td>
+                        <td>
+                            <span class="badge badge-{% if exec.status == 'PASSED' %}success{% else %}error{% endif %}">
+                                {{ exec.status }}
+                            </span>
+                        </td>
+                        <td>
+                            {{ exec.summary.passed }}/{{ exec.summary.total }} passed
+                        </td>
+                        <td>
+                            {% if exec.squash_synced %}
+                            <span class="badge badge-success">Yes</span>
+                            {% else %}
+                            <span class="badge badge-warning">No</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <a href="{% url 'tests_manager:execution_results' suite_id=suite.id execution_id=exec.id %}"
+                               class="btn btn-secondary btn-sm">View</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p class="empty-state">No executions yet. Click "Execute Tests" to run your test suite.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Danger Zone -->
+    <div class="card" style="border: 1px solid var(--error-color);">
+        <div class="card-header" style="background-color: #fef2f2;">
+            <h2 style="color: var(--error-color);">Danger Zone</h2>
+        </div>
+        <div class="card-body">
+            <p>Permanently delete this test suite and all its executions.</p>
+            <form action="{% url 'tests_manager:suite_delete' suite_id=suite.id %}" method="post"
+                  onsubmit="return confirm('Are you sure you want to delete this test suite?');">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-danger">Delete Suite</button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

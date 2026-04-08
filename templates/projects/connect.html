@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+
+{% block title %}Connect Project - Squash Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Connect to My Project</h1>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <form method="post" class="form">
+            {% csrf_token %}
+
+            <div class="form-group">
+                <label for="name">Project Name</label>
+                <input type="text" id="name" name="name" class="form-control"
+                       placeholder="e.g., E-Commerce Tests" required>
+                <small class="form-text">A friendly name for your project</small>
+            </div>
+
+            <div class="form-group">
+                <label for="directory_path">Project Directory Path</label>
+                <div style="display: flex; gap: 8px;">
+                    <input type="text" id="directory_path" name="directory_path" class="form-control"
+                           placeholder="e.g., C:\Projects\my-robot-tests" required style="flex: 1;">
+                    <button type="button" id="browse-btn" class="btn btn-outline">Browse...</button>
+                </div>
+                <small class="form-text">Full path to the directory containing your .robot files</small>
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Connect Project</button>
+                <a href="{% url 'projects:project_list' %}" class="btn btn-outline">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="info-box">
+    <h3>What happens next?</h3>
+    <ol>
+        <li>We'll scan your directory for .robot files</li>
+        <li>Extract all test case names from each file</li>
+        <li>You'll map each test to a Squash TM test case</li>
+        <li>Install a listener for real-time test result sync</li>
+    </ol>
+</div>
+
+<script>
+document.getElementById('browse-btn').addEventListener('click', async function() {
+    const btn = this;
+    const originalText = btn.textContent;
+    btn.textContent = 'Opening...';
+    btn.disabled = true;
+
+    try {
+        const response = await fetch('{% url "projects:browse_folder" %}', {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}'
+            }
+        });
+        const data = await response.json();
+        if (data.path) {
+            document.getElementById('directory_path').value = data.path;
+        }
+    } catch (error) {
+        console.error('Error opening folder dialog:', error);
+    } finally {
+        btn.textContent = originalText;
+        btn.disabled = false;
+    }
+});
+</script>
+{% endblock %}

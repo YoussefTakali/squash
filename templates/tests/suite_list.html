@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+
+{% block title %}Test Suites - Squash Manager{% endblock %}
+
+{% block content %}
+<div class="page-container">
+    <div class="page-header">
+        <h1>Test Suites</h1>
+        <a href="{% url 'tests_manager:suite_create' %}" class="btn btn-primary">+ New Suite</a>
+    </div>
+
+    {% if suites %}
+    <div class="suite-list">
+        {% for suite in suites %}
+        <div class="suite-item">
+            <div class="suite-info">
+                <h3>{{ suite.name }}</h3>
+                <p>{{ suite.robot_directory }}</p>
+                <p>
+                    <span class="badge badge-pending">
+                        {{ suite.detected_tests|length }} tests detected
+                    </span>
+                    {% if suite.squash_iteration_id %}
+                    <span class="badge badge-success">Squash configured</span>
+                    {% endif %}
+                </p>
+            </div>
+            <div class="suite-actions">
+                <a href="{% url 'tests_manager:suite_detail' suite_id=suite.id %}" class="btn btn-secondary btn-sm">View</a>
+                <button onclick="executeSuite('{{ suite.id }}')" class="btn btn-primary btn-sm">Execute</button>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <h3>No test suites yet</h3>
+        <p>Create your first test suite to get started.</p>
+        <a href="{% url 'tests_manager:suite_create' %}" class="btn btn-primary">Create Test Suite</a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
