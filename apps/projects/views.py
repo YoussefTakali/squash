@@ -312,21 +312,19 @@ def autolink_preview(request, project_id: str):
         if not service:
             return JsonResponse({"error": "Squash credentials not configured"}, status=400)
 
-        # Get squash project ID from query params (optional filter)
-        squash_project_id = request.GET.get("squash_project_id")
-        if squash_project_id:
-            squash_project_id = int(squash_project_id)
-
         # Get threshold from query params (default 0.6)
         threshold = float(request.GET.get("threshold", 0.6))
 
         # Get all robot test cases
         robot_test_cases = project_service.get_all_test_cases(project_id)
 
-        # Find matches
-        result = service.auto_link_tests(
-            robot_test_cases,
-            squash_project_id=squash_project_id,
+        # Get project name to match with campaign folder
+        project_name = project.get("name", "")
+
+        # Find matches using campaign folder matching by project name
+        result = service.auto_link_by_project_name(
+            project_name=project_name,
+            robot_test_cases=robot_test_cases,
             threshold=threshold,
             skip_already_mapped=False  # Show all for preview
         )
